@@ -1,6 +1,6 @@
   {
     "name": "HCPSS Canvas Assignment Extension",
-    "version": "1.0",
+    "version": "2.0",
     "description": "Collect all assignments for courses in Canvas",
     "manifest_version": 2,
      "content_scripts": [

@@ -1,5 +1,12 @@
+/**
+ * HCPSS canvas instance extension
+ *
+ * @TODO: Limit simultaneous requests.
+ */
 
-DEBUG = true;
+DEBUG = false;
+
+BASE_URL = "https://hcpss.instructure.com/api/v1";
 
 /* Strip the while(1) prefix from API responses. We are not embedding
  * content directly, so let's manipulate as needed.
@@ -27,48 +34,60 @@ function parseLinkHeader(linkHeader) {
 
 /* Generate a list item containing an assignment and
  * append it to an unordered list element
+ *
+ * @param assignment - JSON Assignment object from Canvas API (https://canvas.instructure.com/doc/api/assignments.html)
+ * @param userId - Either a valid user ID or "self"
+ * @param updateList - An unordered list element to insert new assignments into
+ * @param container - The encapsulating element of the unordered updateList. Style on this element is modified.
  */
-function updateAssignments(assignment, userId, updateList, container, submissions) {
-
+function updateAssignments(assignment, userId, updateList, container) {
     // Check for various assignment flags
     // fetch submissions
-    //
-    //if (DEBUG) {
-    //    console.log("SUBMISISONSS");
-    //    console.log(submissions);
-    //}
     var submission_xhr = new XMLHttpRequest();
-    let url = `https://hcpss.instructure.com/api/v1/courses/${assignment["course_id"]}/assignments/${assignment["id"]}/submissions/${userId}`;
+    let url = `${BASE_URL}/courses/${assignment["course_id"]}/assignments/${assignment["id"]}/submissions/${userId}`;
     submission_xhr.open("GET", url, true);
     submission_xhr.onreadystatechange = function() {
       if (submission_xhr.readyState == 4) {
         var item = document.createElement("li");
         var assignmentLink = document.createElement("a");
+        var dueDate = document.createElement("p");
         var text = submission_xhr.responseText;
         var jsonObject = unpackAPIResponse(text);
-          if (jsonObject['workflow_state'] == "unsubmitted") {
-              console.log(jsonObject);
+        if (jsonObject['workflow_state'] == "unsubmitted") {
+            if(DEBUG) console.log(jsonObject);
             assignmentLink.setAttribute("href", `${assignment["html_url"]}`);
-            
+
             assignmentLink.innerHTML = assignment.name;
-            
+            let due = new Date(assignment["due_at"]);
+            let hour = due.getHours();
+            let period = "AM";
+            if (hour >= 12) {
+                period = "PM";
+                if (hour > 12)
+                    hour = hour % 12;
+            }
+            let minutes = due.getMinutes();
+            dueDate.innerHTML = `Due on ${due.toDateString()} at ${hour}:${minutes} ${period}`;
             item.appendChild(assignmentLink);
-            
+            item.appendChild(dueDate);
+            item.className = assignment["due_at"];
+
             updateList.append(item);
-              container.style = "";
-          }
+            container.style = "";
+        }
       }
     }
     submission_xhr.send();
-             
-
-    //if (DEBUG) console.log(assignment);
 }
 
 /* Fetch all assignments from the current page in URL and all subsequent
  * pages.
  * Add each assignment as a list item in the unordered updateList.
  * Hide the enclosing container if there are no assignments.
+ * @param url - URL to fetch assignments from
+ * @param userID - Valid user ID or "self"
+ * @param container - Container to hold updateList
+ * @param updateList - Unordered list to hold assigments
  */
 function fetchAssignmentsAndUpdate(url, userId, container, updateList) {
     let xhr = new XMLHttpRequest();
@@ -79,7 +98,7 @@ function fetchAssignmentsAndUpdate(url, userId, container, updateList) {
 
         let text = xhr.responseText;
         let jsonObject = unpackAPIResponse(text);
-        assignmentsLeft = jsonObject.filter(assignment => //!assignment.has_submitted_submissions && 
+        assignmentsLeft = jsonObject.filter(assignment => (assignment.due_at != null) &&
             (Date.now() > new Date(assignment["unlock_at"]))
         );
 
@@ -88,7 +107,7 @@ function fetchAssignmentsAndUpdate(url, userId, container, updateList) {
         }
         for(var i = 0; i < assignmentsLeft.length; i++) {
             // Generate requests here and use this function as the completion
-            updateAssignments(assignmentsLeft[i], userId, updateList, container, jsonObject);
+            updateAssignments(assignmentsLeft[i], userId, updateList, container);
         }
       }
     }
@@ -97,6 +116,10 @@ function fetchAssignmentsAndUpdate(url, userId, container, updateList) {
 
 /* Retrieve all assignments for a given course and update the list of
  * unsubmitted assignments
+ * 
+ * @param course - A course object retrieved from the Canvas API
+ * @param userId - A valid user ID or "self"
+ * @param updateList - An HTML element containing all courses and their assignments
  */
 function fetchAssignmentsForCourse(course, userId, updateList) {
     var container = document.createElement("div");
@@ -115,7 +138,7 @@ function fetchAssignmentsForCourse(course, userId, updateList) {
     // Hide the container until we have an assignment
     container.style = "display:none";
     
-    fetchAssignmentsAndUpdate(`https://hcpss.instructure.com/api/v1/courses/${course['id']}/assignments?page=1&per_page=10`, userId, container, list);
+    fetchAssignmentsAndUpdate(`${BASE_URL}/users/${userId}/courses/${course['id']}/assignments?page=1&per_page=10&order_by=due_at`, userId, container, list);
 }
 
 /* Fetch all assignments from all courses
@@ -149,7 +172,7 @@ function fetchAllAssignmentsFromCourses(url, userId, updateList) {
 function fetchAllAssignments(userId, updateList) {
     // Fetch assignments from courses
     // fetchAllAssignmentsFromCourses(updateList);
-    fetchAllAssignmentsFromCourses(`https://hcpss.instructure.com/api/v1/users/${userId}/courses?page=1&per_page=10`, userId, updateList);
+    fetchAllAssignmentsFromCourses(`${BASE_URL}/users/${userId}/courses?page=1&per_page=10`, userId, updateList);
 }
 
 /* Wait for the side-bar to load before attempting to modify it. */
@@ -163,23 +186,14 @@ function waitForLoad () {
   }
 }
 
-waitForLoad();
-
 function populateSidebar() {
     var sidebar = document.getElementById("right-side");
 
-    var container = document.createElement("div");
-
-    var header = document.createElement("h3");
-    header.innerHTML = "Unsubmitted Assignments";
-
-    console.log(window);
-    // Check if we're a student or an observer
 
     // Fetch all observees
     var xhr = new XMLHttpRequest();
 
-    let url = `https://hcpss.instructure.com/api/v1/users/self/observees`;
+    let url = `${BASE_URL}/users/self/observees`;
     
     xhr.open("GET", url, true);
     xhr.onreadystatechange = function() {
@@ -193,21 +207,33 @@ function populateSidebar() {
         {
             for (let i = 0; i < observees.length; i++)
             {
+                let container = document.createElement("div");
+                let header = document.createElement("h3");
+                header.innerHTML = `${observees[i].name}'s Unsubmitted Assignments`;
+                container.appendChild(header);
+                sidebar.appendChild(container);
                 fetchAllAssignments(observees[i].id, container);
             }
         }
         else
         {
+            let container = document.createElement("div");
+            let header = document.createElement("h3");
+            header.innerHTML = "My Unsubmitted Assignments";
+            container.appendChild(header);
+            // We're a student
             fetchAllAssignments("self", container);
+            sidebar.appendChild(container);
         }
-        // for all observees or self
       }
     }
     xhr.send();
     
     
-    container.appendChild(header);
-    sidebar.appendChild(container);
 
 }
 
+// Script entry point
+// Wait for the side bar to load so we can inject into it.
+//
+waitForLoad();
