@@ -1,12 +1,16 @@
 /**
  * HCPSS canvas instance extension
  *
- * @TODO: Limit simultaneous requests.
+ * @TODO: Investigate ways to speed up rendering awaiting fewer actions
  */
 
 DEBUG = false;
 
 BASE_URL = "https://hcpss.instructure.com/api/v1";
+
+function Student(id) {
+    this.id = id;
+}
 
 /* Strip the while(1) prefix from API responses. We are not embedding
  * content directly, so let's manipulate as needed.
@@ -19,9 +23,13 @@ function unpackAPIResponse(response) {
  * Returns an object with current, next, last, and first elements
  */
 function parseLinkHeader(linkHeader) {
+    var pages = {};
+
+    if (linkHeader == null)
+        return pages;
+    
     var links = linkHeader.split(",");
     
-    var pages = {};
     for (var i = 0; i < links.length; i++) {
         let m = links[i].match(/<(https:.*)>.*rel="(.*)"/);
         let rel = m[2];
@@ -32,147 +40,144 @@ function parseLinkHeader(linkHeader) {
     return pages
 }
 
-/* Generate a list item containing an assignment and
- * append it to an unordered list element
+/* Utility function to inspect access_restricted_by_date property.
  *
- * @param assignment - JSON Assignment object from Canvas API (https://canvas.instructure.com/doc/api/assignments.html)
- * @param userId - Either a valid user ID or "self"
- * @param updateList - An unordered list element to insert new assignments into
- * @param container - The encapsulating element of the unordered updateList. Style on this element is modified.
+ * @TODO: Validation checks.
+ * @TODO: Inline?
  */
-function updateAssignments(assignment, userId, updateList, container) {
-    // Check for various assignment flags
-    // fetch submissions
-    var submission_xhr = new XMLHttpRequest();
-    let url = `${BASE_URL}/courses/${assignment["course_id"]}/assignments/${assignment["id"]}/submissions/${userId}`;
-    submission_xhr.open("GET", url, true);
-    submission_xhr.onreadystatechange = function() {
-      if (submission_xhr.readyState == 4) {
-        var item = document.createElement("li");
-        var assignmentLink = document.createElement("a");
-        var dueDate = document.createElement("p");
-        var text = submission_xhr.responseText;
-        var jsonObject = unpackAPIResponse(text);
-        if (jsonObject['workflow_state'] == "unsubmitted") {
-            if(DEBUG) console.log(jsonObject);
-            assignmentLink.setAttribute("href", `${assignment["html_url"]}`);
+function filterInactiveClasses(classList) {
+    return classList.filter(course => !('access_restricted_by_date' in course));
+}
 
-            assignmentLink.innerHTML = assignment.name;
-            let due = new Date(assignment["due_at"]);
-            let hour = due.getHours();
-            let period = "AM";
-            if (hour >= 12) {
-                period = "PM";
-                if (hour > 12)
-                    hour = hour % 12;
+/* Utility function to fetch paginated API responses by inspecting the next link
+ * and aggregating all results.
+ *
+ * returns all responses across all pages.
+ *
+ * @TODO: This could potentially cause issues for large responses.
+ */
+async function getAllResponses(url) {
+    let allResponses = await fetch(url).then(async function(response) {
+        let results = await response.text().then(unpackAPIResponse);
+        links = parseLinkHeader(response.headers.get("link"));
+        while ("next" in links) {
+            let nextResponse = await fetch(links["next"]);
+            let newResults = await nextResponse.text().then(unpackAPIResponse);
+            if (Object.keys(newResults).length == 0) {
+                break;
             }
-            let minutes = due.getMinutes();
-            dueDate.innerHTML = `Due on ${due.toDateString()} at ${hour}:${minutes} ${period}`;
-            item.appendChild(assignmentLink);
-            item.appendChild(dueDate);
-            item.className = assignment["due_at"];
-
-            updateList.append(item);
-            container.style = "";
+            links = parseLinkHeader(nextResponse.headers.get("link"));
+            results = results.concat(newResults);
         }
-      }
-    }
-    submission_xhr.send();
+        return results;
+    });;
+
+    return allResponses;
 }
 
-/* Fetch all assignments from the current page in URL and all subsequent
- * pages.
- * Add each assignment as a list item in the unordered updateList.
- * Hide the enclosing container if there are no assignments.
- * @param url - URL to fetch assignments from
- * @param userID - Valid user ID or "self"
- * @param container - Container to hold updateList
- * @param updateList - Unordered list to hold assigments
+/* Given a student and a course object, fetch all assignments with unsubmitted
+ * submissions.
+ *
+ * Return list of assignments.
+ *
+ * @TODO: Make the filter optional
+ * @TODO: Support additional filter types
+ * @TODO: Investigate API. The include[] field ought to do what we need.
  */
-function fetchAssignmentsAndUpdate(url, userId, container, updateList) {
-    let xhr = new XMLHttpRequest();
-    xhr.open("GET", url, true);
-    xhr.onreadystatechange = function() {
-      if (xhr.readyState == 4) {
-        var pages = parseLinkHeader(xhr.getResponseHeader("link"));
-
-        let text = xhr.responseText;
-        let jsonObject = unpackAPIResponse(text);
-        assignmentsLeft = jsonObject.filter(assignment => (assignment.due_at != null) &&
-            (Date.now() > new Date(assignment["unlock_at"]))
-        );
-
-        if (pages["current"] != pages["last"]) {
-            fetchAssignmentsAndUpdate(pages["next"], userId, updateList);
-        }
-        for(var i = 0; i < assignmentsLeft.length; i++) {
-            // Generate requests here and use this function as the completion
-            updateAssignments(assignmentsLeft[i], userId, updateList, container);
-        }
-      }
-    }
-    xhr.send();
-}
-
-/* Retrieve all assignments for a given course and update the list of
- * unsubmitted assignments
- * 
- * @param course - A course object retrieved from the Canvas API
- * @param userId - A valid user ID or "self"
- * @param updateList - An HTML element containing all courses and their assignments
- */
-function fetchAssignmentsForCourse(course, userId, updateList) {
-    var container = document.createElement("div");
-    var headerLink = document.createElement("a");
-    headerLink.setAttribute("href", `/courses/${course["id"]}`);
-
-    var header = document.createElement("h2");
-    header.innerHTML = course["name"];
-    headerLink.appendChild(header);
-
-    container.appendChild(headerLink);
-    var list = document.createElement("ul");
-    container.appendChild(list);
-    updateList.appendChild(container);
-
-    // Hide the container until we have an assignment
-    container.style = "display:none";
+async function getAllAssignmentsForCourse(student, course) {
     
-    fetchAssignmentsAndUpdate(`${BASE_URL}/users/${userId}/courses/${course['id']}/assignments?page=1&per_page=10&order_by=due_at`, userId, container, list);
-}
+    let url = BASE_URL + `/users/${student.id}/courses/${course['id']}/` + 
+        "assignments?page=1&per_page=10&order_by=due_at";
 
-/* Fetch all assignments from all courses
- */
-function fetchAllAssignmentsFromCourses(url, userId, updateList) {
-    // Fetch all courses and for each course, fetch all assignments
-    // Do the request
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", url, true);
-    xhr.onreadystatechange = function() {
-      if (xhr.readyState == 4) {
-        var pages = parseLinkHeader(xhr.getResponseHeader("link"));
+    let assignments = await getAllResponses(url);
+    
+    assignments = assignments.filter(as => (as.due_at != null) &&
+        (Date.now() > new Date(as["unlock_at"])));
+
+    for (let j = 0; j < assignments.length; j++) {
+        let assignment = assignments[j];
         
-        var text = xhr.responseText;
-        var jsonObject = unpackAPIResponse(text);
-
-        validCourses = jsonObject.filter(course => !('access_restricted_by_date' in course));
-          
-        if (pages["current"] != pages["last"]) {
-            fetchAllAssignmentsFromCourses(pages["next"], userId, updateList);
-        }
-        for(var i = 0; i < validCourses.length; i++) {
-            fetchAssignmentsForCourse(validCourses[i], userId, updateList);
-        }
-      }
+        let submissionUrl = BASE_URL + `/courses/${course["id"]}/assignments/` +
+            `${assignment["id"]}/submissions/${student.id}`;
+        let submissions = await getAllResponses(submissionUrl);
+        assignment["submission"] = submissions;
     }
-    xhr.send();
+    let unsubmitted = assignments.filter(
+        // Only select assignments that have unsubmitted submissions
+        assignment => assignment.submission["workflow_state"] == "unsubmitted"
+    );
+    return unsubmitted;
 }
 
+/* Given a list of assignments, convert them to pretty HTML and
+ * populate the listElement with each assignment.
+ */
+function renderUnsubmittedAssignmentList(assignments, listElement) {
+    for (let i = 0; i < assignments.length; i++) {
+        let assignment = assignments[i];
 
-function fetchAllAssignments(userId, updateList) {
-    // Fetch assignments from courses
-    // fetchAllAssignmentsFromCourses(updateList);
-    fetchAllAssignmentsFromCourses(`${BASE_URL}/users/${userId}/courses?page=1&per_page=10`, userId, updateList);
+        let item = document.createElement("li");
+        let assignmentLink = document.createElement("a");
+        let dueDate = document.createElement("p");
+        
+        assignmentLink.setAttribute("href", `${assignment["html_url"]}`);
+        assignmentLink.innerHTML = assignment.name;
+        let due = new Date(assignment["due_at"]);
+        let hour = due.getHours();
+        let period = "AM";
+        if (hour >= 12) {
+            period = "PM";
+            if (hour > 12)
+                hour = hour % 12;
+        }
+        let minutes = due.getMinutes();
+        if (minutes < 10) {
+            minutes = "0"+minutes;
+        }
+        dueDate.innerHTML = `Due on ${due.toDateString()} at ${hour}:${minutes} ${period}`;
+        item.appendChild(assignmentLink);
+        item.appendChild(dueDate);
+        item.className = assignment["due_at"];
+
+        listElement.append(item);
+    }
+
+}
+
+/* Fetch all assignments for a student across all active courses and populate
+ * studentElement with a list of outstanding assignments
+ */
+async function fetchAllAssignments(student, studentElement) {
+    let url = BASE_URL + `/users/${student.id}/courses?page=1&per_page=10`;
+    
+    let courses = await getAllResponses(url).then(filterInactiveClasses);
+
+    for (let i = 0; i < courses.length; i++) {
+        let course = courses[i];
+        
+        let container = document.createElement("div");
+        container.style = "display:none";
+        let headerLink = document.createElement("a");
+        headerLink.setAttribute("href", `/courses/${course["id"]}`);
+
+        let header = document.createElement("h2");
+        header.innerHTML = course["name"];
+        headerLink.appendChild(header);
+
+        container.appendChild(headerLink);
+        let list = document.createElement("ul");
+        
+        container.appendChild(list);
+        studentElement.appendChild(container);
+
+        getAllAssignmentsForCourse(student, course).then(function (assignments) {
+            if (assignments.length > 0) {
+                container.style = "";
+            }
+            renderUnsubmittedAssignmentList(assignments, list);
+        });
+
+    }
 }
 
 /* Wait for the side-bar to load before attempting to modify it. */
@@ -186,48 +191,38 @@ function waitForLoad () {
   }
 }
 
-function populateSidebar() {
+async function populateSidebar() {
     var sidebar = document.getElementById("right-side");
-
-
-    // Fetch all observees
-    var xhr = new XMLHttpRequest();
 
     let url = `${BASE_URL}/users/self/observees`;
     
-    xhr.open("GET", url, true);
-    xhr.onreadystatechange = function() {
-      if (xhr.readyState == 4) {
-        var pages = parseLinkHeader(xhr.getResponseHeader("link"));
-        
-        var text = xhr.responseText;
-        var observees = unpackAPIResponse(text);
+    let observees = await fetch(url).then(async function(res) {
+        let obs = await res.text().then(unpackAPIResponse);
+        return obs;
+    });
 
-        if (observees.length > 0)
-        {
-            for (let i = 0; i < observees.length; i++)
-            {
-                let container = document.createElement("div");
-                let header = document.createElement("h3");
-                header.innerHTML = `${observees[i].name}'s Unsubmitted Assignments`;
-                container.appendChild(header);
-                sidebar.appendChild(container);
-                fetchAllAssignments(observees[i].id, container);
-            }
-        }
-        else
+    if (observees.length > 0)
+    {
+        for (let i = 0; i < observees.length; i++)
         {
             let container = document.createElement("div");
             let header = document.createElement("h3");
-            header.innerHTML = "My Unsubmitted Assignments";
+            header.innerHTML = `${observees[i].name}'s Unsubmitted Assignments`;
             container.appendChild(header);
-            // We're a student
-            fetchAllAssignments("self", container);
             sidebar.appendChild(container);
+            fetchAllAssignments(new Student(observees[i].id), container);
         }
-      }
     }
-    xhr.send();
+    else
+    {
+        let container = document.createElement("div");
+        let header = document.createElement("h3");
+        header.innerHTML = "My Unsubmitted Assignments";
+        container.appendChild(header);
+        // We're a student
+        fetchAllAssignments(new Student("self"), container);
+        sidebar.appendChild(container);
+    }
     
     
 
