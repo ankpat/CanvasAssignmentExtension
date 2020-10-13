@@ -116,12 +116,23 @@ function renderUnsubmittedAssignmentList(assignments, listElement) {
     for (let i = 0; i < assignments.length; i++) {
         let assignment = assignments[i];
 
+        /*
+         * This code sets up the following structure.
+         * <li>
+         *     <a href=[Assignment URL]>Assignment</a>
+         *     <p>Due at [Due Date]</p>
+         * </li>
+         *
+         * This list item is appended to the listElement which is an unordered
+         * list.
+         */
         let item = document.createElement("li");
         let assignmentLink = document.createElement("a");
         let dueDate = document.createElement("p");
         
         assignmentLink.setAttribute("href", `${assignment["html_url"]}`);
         assignmentLink.innerHTML = assignment.name;
+
         let due = new Date(assignment["due_at"]);
         let hour = due.getHours();
         let period = "AM";
@@ -155,6 +166,15 @@ async function fetchAllAssignments(student, studentElement) {
     for (let i = 0; i < courses.length; i++) {
         let course = courses[i];
         
+        /*
+         * This code sets up the following structure. The unordered list element
+         * is then updated as assignments are collected.
+         * <div>
+         *   <a href=/courses/[course id]><h2>Course Name</h2></a>
+         *   <ul>
+         *   </ul>
+         * </div>
+         */
         let container = document.createElement("div");
         container.style = "display:none";
         let headerLink = document.createElement("a");
@@ -219,13 +239,11 @@ async function populateSidebar() {
         let header = document.createElement("h3");
         header.innerHTML = "My Unsubmitted Assignments";
         container.appendChild(header);
+        sidebar.appendChild(container);
         // We're a student
         fetchAllAssignments(new Student("self"), container);
-        sidebar.appendChild(container);
     }
     
-    
-
 }
 
 // Script entry point
