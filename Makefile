@@ -10,7 +10,7 @@ clean:
 build_dir:
 	@mkdir -p $(BUILD_DIR)
 
-$(BUILD_DIR)/%: %
+$(BUILD_DIR)/%: src/%
 	@cp $< $@
 	
 $(EXT_NAME).zip: build_dir $(BUILD_DIR)/contentScript.js $(BUILD_DIR)/manifest.json
