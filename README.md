@@ -1,5 +1,9 @@
 # CanvasAssignmentExtension
 
+```
+This extension is my personal project. It is not an official HCPSS developed or supported solution.
+```
+
 Download the extension from the Chrome Extension Web Store: https://chrome.google.com/webstore/detail/hcpss-canvas-assignment-e/baabmfbgjcnooapabhjehpakihoihmin
 
 
@@ -10,6 +14,9 @@ In order to do this, the extension uses the Canvas LMS API restricted to the HCP
 The APIs invoked are plaintext and explicitly reference the HCPSS instance of Canvas.
 
 ## Change log
+Changes in v3.1:
+- Added explicit ordering to assignments
+
 Changes in v3:
 - Modernized the underlying JavaScript
 - Streamlined API calls to avoid hitting throttling limits

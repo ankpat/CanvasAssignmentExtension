@@ -87,7 +87,7 @@ async function getAllResponses(url) {
 async function getAllAssignmentsForCourse(student, course) {
     
     let url = BASE_URL + `/users/${student.id}/courses/${course['id']}/` + 
-        "assignments?page=1&per_page=10&order_by=due_at";
+        "assignments?page=1&per_page=10";
 
     let assignments = await getAllResponses(url);
     
@@ -106,7 +106,8 @@ async function getAllAssignmentsForCourse(student, course) {
         // Only select assignments that have unsubmitted submissions
         assignment => assignment.submission["workflow_state"] == "unsubmitted"
     );
-    return unsubmitted;
+    // How much do we trust the API to order these assignments?
+    return unsubmitted.sort((a,b) => new Date(a.due_at) - new Date(b.due_at));
 }
 
 /* Given a list of assignments, convert them to pretty HTML and
@@ -200,22 +201,59 @@ async function fetchAllAssignments(student, studentElement) {
     }
 }
 
+// Keep retrying for 5 minutes
+const maxWaitForLoad = 5*60*1000;
+
+var timeSpentWaitingForLoad = 0;
+
 /* Wait for the side-bar to load before attempting to modify it. */
 function waitForLoad () {
-  const el = document.getElementsByClassName("events_list");
+    /* @TODO: This is one of the most brittle part of the whole thing.
+     * Make this a bit more stable.
+     */
+    const el = document.getElementsByClassName("events_list");
 
-  if (el.length) {
-    populateSidebar();
-  } else {
-    setTimeout(waitForLoad, 300); // try again in 300 milliseconds
-  }
+    if (el.length) {
+        populateSidebar();
+    }
+    else {
+        if (timeSpentWaitingForLoad < maxWaitForLoad) {
+            timeSpentWaitingForLoad += 300;
+            setTimeout(waitForLoad, 300); // try again in 300 milliseconds
+        }
+        else {
+            if(DEBUG) console.log("Timeout out...");
+        }
+    }
+}
+
+/*
+ * Add all the assignments for a given student to the listElement containing
+ * assignments for all students.
+ *
+ * id can be a numeric ID or "self" as per the v1 API specification
+ */
+async function addStudentAssignments(id, displayName, listElement) {
+    let container = document.createElement("div");
+    let header = document.createElement("h3");
+    header.innerHTML = `${displayName} Unsubmitted Assignments`;
+    container.appendChild(header);
+    listElement.appendChild(container);
+    fetchAllAssignments(new Student(id), container);
 }
 
 async function populateSidebar() {
+    /*
+     * @TODO: This is still pretty brittle. Who's to say this element will be
+     * around forever
+     */
     var sidebar = document.getElementById("right-side");
 
     let url = `${BASE_URL}/users/self/observees`;
     
+    // Query API for all observees
+    // The assumption here is that students will not have observees
+    // This could be an invalid assumption though.
     let observees = await fetch(url).then(async function(res) {
         let obs = await res.text().then(unpackAPIResponse);
         return obs;
@@ -225,23 +263,13 @@ async function populateSidebar() {
     {
         for (let i = 0; i < observees.length; i++)
         {
-            let container = document.createElement("div");
-            let header = document.createElement("h3");
-            header.innerHTML = `${observees[i].name}'s Unsubmitted Assignments`;
-            container.appendChild(header);
-            sidebar.appendChild(container);
-            fetchAllAssignments(new Student(observees[i].id), container);
+            addStudentAssignments(observees[i].id, `${observees[i].name}'s`, sidebar);
         }
     }
     else
     {
-        let container = document.createElement("div");
-        let header = document.createElement("h3");
-        header.innerHTML = "My Unsubmitted Assignments";
-        container.appendChild(header);
-        sidebar.appendChild(container);
         // We're a student
-        fetchAllAssignments(new Student("self"), container);
+        addStudentAssignments("self", "My", sidebar);
     }
     
 }
