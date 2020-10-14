@@ -5,6 +5,11 @@ In order to do this, the extension uses the Canvas LMS API restricted to the HCP
 
 The APIs invoked are plaintext and explicitly reference the HCPSS instance of Canvas.
 
+## Change log
+Changes in v3:
+- Modernized the underlying JavaScript
+- Streamlined API calls to avoid hitting throttling limits
+
 Changes in v2:
 - Added support for parents with multiple children
 - Added due dates to all assignments
