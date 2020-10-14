@@ -1,4 +1,8 @@
 # CanvasAssignmentExtension
+
+Download the extension from the Chrome Extension Web Store: https://chrome.google.com/webstore/detail/hcpss-canvas-assignment-e/baabmfbgjcnooapabhjehpakihoihmin
+
+
 Extension for the HCPSS Canvas LMS instance. This extension adds a new section to the sidebar which displays all active assignments which have no submissions. This allows students to easily see which assignments must still be turned in.
 
 In order to do this, the extension uses the Canvas LMS API restricted to the HCPSS instance of the application. This will avoid leaking information across school systems.
@@ -14,8 +18,6 @@ Changes in v2:
 - Added support for parents with multiple children
 - Added due dates to all assignments
 - Filter out assignments without due dates
-
-https://chrome.google.com/webstore/detail/hcpss-canvas-assignment-e/baabmfbgjcnooapabhjehpakihoihmin
 
 # Security
 
