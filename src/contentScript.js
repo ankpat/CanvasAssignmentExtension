@@ -92,6 +92,7 @@ async function getAllAssignmentsForCourse(student, course) {
     let assignments = await getAllResponses(url);
     
     assignments = assignments.filter(as => (as.due_at != null) &&
+        (Date.now() < new Date(as["due_at"])) &&
         (Date.now() > new Date(as["unlock_at"])));
 
     for (let j = 0; j < assignments.length; j++) {
