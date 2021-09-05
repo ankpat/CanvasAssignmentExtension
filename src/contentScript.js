@@ -202,8 +202,8 @@ async function fetchAllAssignments(student, studentElement) {
     }
 }
 
-// Keep retrying for 5 minutes
-const maxWaitForLoad = 5*60*1000;
+// Keep retrying for 30 second
+const maxWaitForLoad = 30*1000;
 
 var timeSpentWaitingForLoad = 0;
 
@@ -212,9 +212,9 @@ function waitForLoad () {
     /* @TODO: This is one of the most brittle part of the whole thing.
      * Make this a bit more stable.
      */
-    const el = document.getElementsByClassName("events_list");
+    const el = document.getElementById("important-dates-sidebar");
 
-    if (el.length) {
+    if (el) {
         populateSidebar();
     }
     else {
@@ -248,7 +248,7 @@ async function populateSidebar() {
      * @TODO: This is still pretty brittle. Who's to say this element will be
      * around forever
      */
-    var sidebar = document.getElementById("right-side");
+    var sidebar = document.getElementById("important-dates-sidebar");
 
     let url = `${BASE_URL}/users/self/observees`;
     
@@ -279,3 +279,4 @@ async function populateSidebar() {
 // Wait for the side bar to load so we can inject into it.
 //
 waitForLoad();
+
